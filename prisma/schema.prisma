@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  CONTRIBUTOR
+  VERIFIED_CONTRIBUTOR
+  MODERATOR
+  ADMIN
+}
+
+enum ContentStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EntityType {
+  FRUIT
+  WEAPON
+  FIGHTING_STYLE
+  COMBO
+  BUILD
+  WIKI_PAGE
+}
+
+model User {
+  id                 String            @id @default(cuid())
+  email              String            @unique
+  name               String?
+  username           String            @unique
+  avatarUrl          String?
+  role               Role              @default(USER)
+  isSupporter        Boolean           @default(false)
+  supporterSince     DateTime?
+  reputationPoints   Int               @default(0)
+  reputationLevel    Int               @default(1)
+  emailVerified      DateTime?
+  image              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  badges             UserBadge[]
+  edits              EditHistory[]     @relation("EditorEdits")
+  combos             Combo[]           @relation("ComboAuthor")
+  builds             Build[]           @relation("BuildAuthor")
+  votes              TierVote[]
+  reputationEvents   Reputation[]
+  moderationActions  EditHistory[]     @relation("ModeratorEdits")
+
+  accounts           Account[]
+  sessions           Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  key         String      @unique
+  name        String
+  description String
+  icon        String?
+  createdAt   DateTime    @default(now())
+
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id         String    @id @default(cuid())
+  userId     String
+  badgeId    String
+  assignedAt DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge      Badge     @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+}
+
+model Fruit {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  name            String
+  description     String
+  advantages      String
+  disadvantages   String
+  currentTier     String        @default("B")
+  metaScore       Float         @default(0)
+  isMetaCurrent   Boolean       @default(false)
+  searchVector    Unsupported("tsvector")?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  combos          Combo[]
+  builds          Build[]
+  tierVotes       TierVote[]
+  editHistory     EditHistory[]
+}
+
+model Weapon {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  name            String
+  description     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  combos          Combo[]
+  builds          Build[]
+  tierVotes       TierVote[]
+  editHistory     EditHistory[]
+}
+
+model FightingStyle {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  name            String
+  description     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  combos          Combo[]
+  builds          Build[]
+  tierVotes       TierVote[]
+  editHistory     EditHistory[]
+}
+
+model Combo {
+  id                  String        @id @default(cuid())
+  slug                String        @unique
+  title               String
+  inputSequence       String
+  estimatedDamage     Int
+  explanation         String
+  animationSceneJson  String?
+  status              ContentStatus @default(PENDING_REVIEW)
+  views               Int           @default(0)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  fruitId             String?
+  weaponId            String?
+  fightingStyleId     String?
+  authorId            String
+
+  fruit               Fruit?         @relation(fields: [fruitId], references: [id], onDelete: SetNull)
+  weapon              Weapon?        @relation(fields: [weaponId], references: [id], onDelete: SetNull)
+  fightingStyle       FightingStyle? @relation(fields: [fightingStyleId], references: [id], onDelete: SetNull)
+  author              User           @relation("ComboAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  editHistory         EditHistory[]
+}
+
+model Build {
+  id                  String        @id @default(cuid())
+  slug                String        @unique
+  title               String
+  description         String
+  isMeta              Boolean       @default(false)
+  ratingAvg           Float         @default(0)
+  ratingCount         Int           @default(0)
+  status              ContentStatus @default(PENDING_REVIEW)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  fruitId             String?
+  weaponId            String?
+  fightingStyleId     String?
+  authorId            String
+
+  fruit               Fruit?         @relation(fields: [fruitId], references: [id], onDelete: SetNull)
+  weapon              Weapon?        @relation(fields: [weaponId], references: [id], onDelete: SetNull)
+  fightingStyle       FightingStyle? @relation(fields: [fightingStyleId], references: [id], onDelete: SetNull)
+  author              User           @relation("BuildAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  editHistory         EditHistory[]
+}
+
+model TierVote {
+  id               String      @id @default(cuid())
+  userId           String
+  entityType       EntityType
+  entityId         String
+  score            Int
+  weightedScore    Float
+  createdAt        DateTime    @default(now())
+
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fruitId          String?
+  weaponId         String?
+  fightingStyleId  String?
+
+  fruit            Fruit?         @relation(fields: [fruitId], references: [id], onDelete: Cascade)
+  weapon           Weapon?        @relation(fields: [weaponId], references: [id], onDelete: Cascade)
+  fightingStyle    FightingStyle? @relation(fields: [fightingStyleId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@unique([userId, entityType, entityId])
+}
+
+model EditHistory {
+  id                String        @id @default(cuid())
+  entityType        EntityType
+  entityId          String
+  oldContent        Json
+  newContent        Json
+  status            ContentStatus @default(PENDING_REVIEW)
+  changeSummary     String
+  createdAt         DateTime      @default(now())
+  reviewedAt        DateTime?
+
+  editorId          String
+  moderatorId       String?
+  fruitId           String?
+  weaponId          String?
+  fightingStyleId   String?
+  comboId           String?
+  buildId           String?
+
+  editor            User           @relation("EditorEdits", fields: [editorId], references: [id], onDelete: Cascade)
+  moderator         User?          @relation("ModeratorEdits", fields: [moderatorId], references: [id], onDelete: SetNull)
+  fruit             Fruit?         @relation(fields: [fruitId], references: [id], onDelete: Cascade)
+  weapon            Weapon?        @relation(fields: [weaponId], references: [id], onDelete: Cascade)
+  fightingStyle     FightingStyle? @relation(fields: [fightingStyleId], references: [id], onDelete: Cascade)
+  combo             Combo?         @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  build             Build?         @relation(fields: [buildId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId, createdAt])
+}
+
+model Reputation {
+  id          String    @id @default(cuid())
+  userId      String
+  amount      Int
+  reason      String
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
